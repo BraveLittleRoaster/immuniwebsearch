@@ -11,6 +11,7 @@ from immuniwebsearch.setup_logger import *
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.support import expected_conditions as EC
 from tenacity import retry, retry_if_exception_type, wait_random, stop_after_attempt
 from selenium.common.exceptions import TimeoutException, UnexpectedAlertPresentException
@@ -30,6 +31,7 @@ class Scraper:
         self.proxy = kwargs.get('proxy')
         self._csv_out = kwargs.get('csv_out')
         self._json_out = kwargs.get('json_out')
+        self._x = kwargs.get('x')
 
         self._base_url = "https://www.immuniweb.com/radar/"
 
@@ -111,7 +113,7 @@ class Scraper:
     @retry(retry=retry_if_exception_type(RetryException), wait=wait_random(10, 60), stop=stop_after_attempt(3))
     def domain_search(self, domain):
 
-        logger.info(f"earching {domain} @ {self._base_url}...")
+        logger.info(f"Searching {domain} @ {self._base_url}...")
 
         if self.proxy:
             logger.debug(f"Using proxy: {self.proxy}")
@@ -166,26 +168,21 @@ class Scraper:
                 EC.element_to_be_clickable((By.ID, "social-networks"))
             )
         except TimeoutException as e:
-            logger.error(f"Could not find the element. Proxy issue? {e}")
-            return False
+            logger.error(f"Could not find the elements. Proxy issue? {e}")
+            raise RetryException
 
         try:
-            # Checked if the results are locked.
-            locked_results = WebDriverWait(driver, 3).until(
-                EC.element_to_be_clickable((By.CLASS_NAME, "locked_results locked_results_not_logged_in"))
+            cyber_expand = WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable((By.XPATH, "/html/body/div[3]/main/div[3]/div[5]/div/div[3]/div[2]/div[1]/div[2]/div/div/i"))
             )
-            logger.error("Results are locked... Need to use a different proxy. Retrying...")
-            raise RetryException
+            typo_expand = WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable((By.XPATH, "/html/body/div[3]/main/div[3]/div[5]/div/div[4]/div[2]/div[1]/div[2]/div/div/i"))
+            )
         except TimeoutException as e:
-            # If we can't find this element, then we're good to go.
-            pass
-
-        cyber_expand = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((By.XPATH, "/html/body/div[3]/main/div[3]/div[5]/div/div[3]/div[2]/div[1]/div[2]/div/div/i"))
-        )
-        typo_expand = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((By.XPATH, "/html/body/div[3]/main/div[3]/div[5]/div/div[4]/div[2]/div[1]/div[2]/div/div/i"))
-        )
+            logger.warning(f"Could not find expansion button for {domain}. Likely a locked IP. Retrying the request...")
+            if not self._x:
+                driver.close()
+            raise RetryException
 
         cyber_expand.click()
         typo_expand.click()
@@ -197,7 +194,10 @@ class Scraper:
             logger.debug(f"Got our id: {search_id}")
         html = driver.page_source
         logger.debug(f"Closing Selenium driver for search: {domain}.")
-        driver.close()
+        if self._x:
+            logger.debug(f"Keeping webdriver open for search: {domain}!")
+        else:
+            driver.close()
 
         all_results = {
             "search_id": search_id,
@@ -305,6 +305,7 @@ def main():
                                                               "Example: socks5://127.0.0.1:9050")
     parser.add_argument("-oC", "--csv-out", action="store", help="Dump results to csv file.")
     parser.add_argument("-oJ", "--json-out", action="store", help="Dump results to json file.")
+    parser.add_argument("-x", action="store_true", help="Keeps selenium open (for debugging purposes).")
 
     args = parser.parse_args()
 
@@ -320,7 +321,7 @@ def main():
     else:
         level = LVL.INFO
     # Init logging.
-    setup(level=LVL.DEBUG)
+    setup(level=level)
 
     if which('geckodriver'):
         pass
@@ -331,15 +332,17 @@ def main():
     scrape = Scraper(
         proxy=args.proxy,
         csv_out=args.csv_out,
-        json_out=args.json_out
+        json_out=args.json_out,
+        x=args.x
     )
 
     if args.domain:
         all_results = scrape.domain_search(args.domain)
-        if args.csv_out:
-            scrape.dump_csv([all_results])
-        if args.json_out:
-            scrape.dump_json([all_results])
+        if all_results:
+            if args.csv_out:
+                scrape.dump_csv([all_results])
+            if args.json_out:
+                scrape.dump_json([all_results])
     else:
         logger.info("Must supply either the -d or -iL options.")
 

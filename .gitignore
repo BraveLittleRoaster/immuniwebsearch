@@ -1,0 +1,10 @@
+# Project exclude paths
+/venv/
+/t-mobile.csv
+/geckodriver.log
+/test.py
+/t-mobile.json
+/immuniwebsearch.egg-info/
+/immuniwebsearch/
+/dist/
+/build/
