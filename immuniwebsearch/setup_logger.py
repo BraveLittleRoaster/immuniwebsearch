@@ -6,7 +6,7 @@ banner = f"""
 """
 
 # Create a logger object.
-logger = logging.getLogger("OmniScan")
+logger = logging.getLogger("ImmuniWebSearch")
 
 
 class LVL:
