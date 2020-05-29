@@ -1,0 +1,10 @@
+beautifulsoup4==4.9.1
+bs4==0.0.1
+coloredlogs==14.0
+humanfriendly==8.2
+selenium==3.141.0
+six==1.15.0
+soupsieve==2.0.1
+tenacity==6.2.0
+urllib3==1.25.9
+verboselogs==1.7
