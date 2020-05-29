@@ -41,26 +41,28 @@ class Scraper:
         pass
 
     @staticmethod
-    def parse_squats(element, domain, type):
+    def parse_squats(element, search_domain, type):
 
         all_results = []
 
         for row in element.find_all("tr", {"class": "mutator_true row_score row_score_"}):
 
             # Extract domain information
-            domain = row.find("span", {
-                "class": "pull-left label label-part-of-url http full-width-mutator status_active mutation-malicious"})
-            if domain:
-                domain = domain.text.replace(" ", "")
-            else:
-                domain = row.find("span", {"class": "pull-left label label-part-of-url http full-width-mutator status_inactive mutation-malicious"})
-                if domain:
-                    domain = domain.text.replace(" ", "")
-                    domain = domain + f" (Inactive)"
-                else:
-                    logger.debug(f"Got an unknown domain when searching {type}@{domain}.")
-                    domain = False
 
+            domains = [
+                row.find("span", {"class": "pull-left label label-part-of-url http full-width-mutator status_active mutation-malicious"}),
+                row.find("span", {"class": "pull-left label label-part-of-url http full-width-mutator status_inactive mutation-malicious"}),
+                row.find("span", {"class": "pull-left label label-part-of-url http full-width-mutator status_active mutation-legitimate"}),
+                row.find("span", {"class": "pull-left label label-part-of-url http full-width-mutator status_inactive mutation-legitimate"}),
+            ]
+            domain = None
+            for dom in domains:
+                if dom:
+                    domain = dom.text.replace(" ", "")
+
+            if domain is None:
+                logger.warning(f"Unknown domain type @ {type}: {search_domain}")
+                return False
             # Extract server information
             server_info = row.find("div", {"class": "vcenter"})
             has_webserver = False
@@ -105,9 +107,9 @@ class Scraper:
 
             logger.debug(f"Found result for search: {result}")
         if all_results:
-            logger.log(LVL.SUCCESS, f"Extracted a total of {len(all_results)} {type} domains for {domain}.")
+            logger.log(LVL.SUCCESS, f"Extracted a total of {len(all_results)} {type} domains for {search_domain}.")
         else:
-            logger.warning(f"Found no results for {type} domains for {domain}.")
+            logger.warning(f"Found no results for {type} domains for {search_domain}.")
         return all_results
 
     @retry(retry=retry_if_exception_type(RetryException), wait=wait_random(10, 60), stop=stop_after_attempt(3))
@@ -185,9 +187,10 @@ class Scraper:
             raise RetryException
 
         cyber_expand.click()
+        time.sleep(10)  # Wait for list to load
         typo_expand.click()
+        time.sleep(10)  # Wait for list to load
         logger.debug(f"Waiting 20 seconds for results to load for search: {domain}")
-        time.sleep(20)  # wait for the tables to load
         cur_url = driver.current_url
         search_id = cur_url.split("=")[1]  # strip the ID off
         if search_id:
